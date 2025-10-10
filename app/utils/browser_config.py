@@ -22,6 +22,7 @@ def create_undetectable_chrome_options(profile_dir: str = None) -> Options:
     
     # Настройки для обхода защиты
     options.add_argument('--no-sandbox')
+    options.add_argument('--headless')
     options.add_argument('--disable-dev-shm-usage')
     options.add_argument('--disable-blink-features=AutomationControlled')
     options.add_experimental_option("excludeSwitches", ["enable-automation"])

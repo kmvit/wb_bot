@@ -129,7 +129,7 @@ class BookingService:
             await self._click_calendar_date(target_date, target_warehouse_id)
             
             # Подтверждаем бронирование
-            await self._confirm_booking()
+            await self._confirm_booking(order_number)
             
             logger.info(f"✅ Successfully booked slot for order {order_number}")
             return True, f"Слот успешно забронирован для заказа {order_number} на {target_date.strftime('%d.%m.%Y')}"
@@ -662,7 +662,7 @@ class BookingService:
             logger.error(f"Error clicking calendar date {target_date.strftime('%d.%m.%Y')}: {e}")
             raise BookingServiceError(f"Ошибка выбора даты {target_date.strftime('%d.%m.%Y')}: {str(e)}")
     
-    async def _confirm_booking(self):
+    async def _confirm_booking(self, order_number: str):
         """Подтвердить бронирование - нажать кнопку 'Запланировать' и проверить успешность"""
         try:
             logger.info("🔍 Looking for 'Запланировать' confirmation button...")
@@ -692,17 +692,12 @@ class BookingService:
                     self.driver.execute_script("arguments[0].click();", confirm_button)
                     logger.info("✅ JavaScript click successful")
                 
-                # Ждем закрытия модального окна
-                logger.info("⏳ Waiting for modal window to close...")
-                try:
-                    self.wait.until(EC.invisibility_of_element_located((By.CSS_SELECTOR, 'div[class*="Calendar-plan-buttons"]')))
-                    logger.info("✅ Modal window closed")
-                except TimeoutException:
-                    logger.warning("⚠️ Modal window did not close, checking status anyway...")
+                # Небольшая задержка после клика для обработки запроса
+                await asyncio.sleep(1.0)
                 
                 # Проверяем успешность бронирования через переход на страницу поставок
                 logger.info("🔍 Checking booking success by navigating to supplies page...")
-                await self._check_booking_success()
+                await self._check_booking_success(order_number)
                 
             except TimeoutException:
                 raise BookingServiceError("Кнопка 'Запланировать' не найдена или не стала активной")
@@ -716,35 +711,10 @@ class BookingService:
             logger.error(f"Unexpected error in _confirm_booking: {e}")
             raise BookingServiceError(f"Неожиданная ошибка при подтверждении бронирования: {e}")
     
-    async def _check_booking_success(self):
+    async def _check_booking_success(self, order_number: str):
         """Проверить успешность бронирования через переход на страницу поставок"""
         try:
-            # Получаем номер заказа из URL
-            current_url = self.driver.current_url
-            order_number = None
-            
-            # Извлекаем номер заказа из URL
-            import re
-            match = re.search(r'preorderId=(\d+)', current_url)
-            if match:
-                order_number = match.group(1)
-                logger.info(f"📋 Found order number in URL: {order_number}")
-            else:
-                logger.warning("⚠️ Could not extract order number from URL")
-                # Попробуем найти номер заказа на странице
-                try:
-                    order_elements = self.driver.find_elements(By.CSS_SELECTOR, '[class*="order"], [class*="Order"], [class*="number"], [class*="Number"]')
-                    for elem in order_elements:
-                        text = elem.text.strip()
-                        if text.isdigit() and len(text) >= 6:  # Номера заказов обычно длинные
-                            order_number = text
-                            logger.info(f"📋 Found order number on page: {order_number}")
-                            break
-                except Exception as e:
-                    logger.debug(f"Error finding order number on page: {e}")
-            
-            if not order_number:
-                raise BookingServiceError("Не удалось определить номер заказа для проверки")
+            logger.info(f"📋 Using order number: {order_number}")
             
             # Переходим на страницу поставок
             logger.info("🌐 Navigating to supplies page to check booking status...")

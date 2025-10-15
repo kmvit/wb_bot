@@ -126,10 +126,7 @@ class BookingService:
             await asyncio.sleep(1)
             
             # Ищем и кликаем по нужной дате в календаре
-            await self._click_calendar_date(target_date, target_warehouse_id)
-            
-            # Подтверждаем бронирование
-            await self._confirm_booking(order_number)
+            await self._click_calendar_date(target_date, target_warehouse_id, order_number)
             
             logger.info(f"✅ Successfully booked slot for order {order_number}")
             return True, f"Слот успешно забронирован для заказа {order_number} на {target_date.strftime('%d.%m.%Y')}"
@@ -423,7 +420,7 @@ class BookingService:
             logger.error(f"Error clicking plan supply button: {e}")
             raise BookingServiceError(f"Ошибка нажатия кнопки 'Запланировать поставку': {str(e)}")
     
-    async def _click_calendar_date(self, target_date: datetime, target_warehouse_id: int):
+    async def _click_calendar_date(self, target_date: datetime, target_warehouse_id: int, order_number: str):
         """Найти и кликнуть по нужной дате в календаре"""
         try:
             logger.info(f"🔍 Looking for date {target_date.strftime('%d.%m.%Y')} in calendar...")
@@ -645,7 +642,7 @@ class BookingService:
                             
                             # Переходим к подтверждению бронирования
                             logger.info("🚀 Step 3: Proceeding to booking confirmation...")
-                            await self._confirm_booking()
+                            await self._confirm_booking(order_number)
                             return
                             logger.error("❌ 'Выбрать' button not found in date cell - booking cannot proceed")
                             raise BookingServiceError("Кнопка 'Выбрать' не найдена в ячейке календаря")

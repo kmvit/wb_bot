@@ -663,433 +663,171 @@ class BookingService:
             raise BookingServiceError(f"Ошибка выбора даты {target_date.strftime('%d.%m.%Y')}: {str(e)}")
     
     async def _confirm_booking(self):
-        """Подтвердить бронирование"""
+        """Подтвердить бронирование - нажать кнопку 'Запланировать' и проверить успешность"""
         try:
             logger.info("🔍 Looking for 'Запланировать' confirmation button...")
             
-            # Логируем все кнопки в календарном блоке для отладки
+            # Ищем кнопку "Запланировать" в календарном блоке
             try:
-                calendar_buttons = self.driver.find_elements(By.CSS_SELECTOR, 'div[class*="Calendar-plan-buttons"] button')
-                logger.info(f"📋 Found {len(calendar_buttons)} buttons in calendar block")
-                for i, btn in enumerate(calendar_buttons):
-                    try:
-                        btn_text = btn.text.strip()
-                        btn_class = btn.get_attribute('class') or ''
-                        btn_span = ""
-                        try:
-                            spans = btn.find_elements(By.TAG_NAME, 'span')
-                            for span in spans:
-                                btn_span += span.text.strip() + " "
-                        except:
-                            pass
-                        logger.info(f"Calendar Button {i}: text='{btn_text}', span='{btn_span.strip()}', class='{btn_class[:100]}...'")
-                    except Exception as e:
-                        logger.debug(f"Error getting calendar button {i} info: {e}")
-            except Exception as e:
-                logger.debug(f"Error logging calendar buttons: {e}")
-            
-            # Сначала пробуем найти кнопку сразу
-            confirm_selectors = [
-                # Точные селекторы для кнопки "Запланировать" из HTML
-                '//span[@class="caption__0iy-jJu+aV" and contains(text(), "Запланировать")]/parent::button',
-                'button.button__I8dwnFm136.m__-jdYj6QZL1.fullWidth__7XwuGaP7I+',
-                'div.Calendar-plan-buttons__transfer button.button__I8dwnFm136',
-                'div[class*="Calendar-plan-buttons__transfer"] button[class*="button__I8dwnFm136"]',
-                'div[class*="Calendar-plan-buttons__content"] button[class*="button__I8dwnFm136"]',
-                'div[class*="Calendar-plan-buttons__wrapper"] button[class*="button__I8dwnFm136"]',
-                # Общие селекторы
-                '//button[contains(text(), "Запланировать")]',
-                '//button[text()="Запланировать"]',
-                '//span[contains(text(), "Запланировать")]/parent::button',
-                '//span[contains(@class, "caption") and contains(text(), "Запланировать")]/parent::button',
-                'div[class*="Calendar-plan-buttons__content"] button',
-                'div[class*="Calendar-plan-buttons__wrapper"] button',
-                'div[class*="Calendar-plan-buttons__transfer"] button',
-                'button[class*="button__I8dwnFm136"]',
-                'button[class*="button__ymbakhzRxO"]',
-                'button[class*="fullWidth"]',
-                'button[class*="fullWidth__7XwuGaP7I+"]',
-                'button[class*="fullWidth__7wrfVPCWJP"]',
-                'button[class*="confirm"]',
-                'button[class*="submit"]',
-                'button[class*="primary"]',
-                'div[class*="modal"] button',
-                'div[class*="Modal"] button',
-                'div[class*="popup"] button',
-                'div[class*="Popup"] button',
-                'button[data-testid*="confirm"]',
-                'button[data-testid*="submit"]',
-                'button[data-testid*="plan"]'
-            ]
-            
-            confirm_button = None
-            for selector in confirm_selectors:
-                try:
-                    if selector.startswith('//'):
-                        # XPath селектор
-                        elements = self.driver.find_elements(By.XPATH, selector)
-                    else:
-                        # CSS селектор
-                        elements = self.driver.find_elements(By.CSS_SELECTOR, selector)
-                    
-                        for element in elements:
-                            if element.is_displayed():
-                                button_text = element.text.strip()
-                                button_class = element.get_attribute('class') or ''
-                                
-                                # Проверяем текст кнопки и текст внутри span элементов
-                                span_text = ""
-                                try:
-                                    spans = element.find_elements(By.TAG_NAME, 'span')
-                                    for span in spans:
-                                        span_text += span.text.strip() + " "
-                                except:
-                                    pass
-                                
-                                full_text = (button_text + " " + span_text).lower()
-                                
-                                # Проверяем, что это именно кнопка "Запланировать" (не "Отменить")
-                                if (any(keyword in full_text for keyword in ["запланировать", "plan"]) and 
-                                    'button__ymbakhzRxO' not in button_class):  # Исключаем кнопку "Отменить"
-                                    confirm_button = element
-                                    logger.info(f"✅ Found 'Запланировать' button with selector: {selector}")
-                                    logger.info(f"Button text: '{button_text}', Span text: '{span_text.strip()}', Class: '{button_class[:100]}...'")
-                                    break
-                    
-                    if confirm_button:
-                        break
-                        
-                except Exception as e:
-                    logger.debug(f"Selector {selector} failed: {e}")
-                    continue
-            
-            # Если не нашли сразу, пробуем специфичные селекторы для календарного блока
-            if not confirm_button:
-                logger.info("🔍 Trying calendar-specific selectors...")
-                calendar_selectors = [
-                    '//span[@class="caption__0iy-jJu+aV" and contains(text(), "Запланировать")]/parent::button',
-                    'div.Calendar-plan-buttons__transfer button.button__I8dwnFm136',
-                    'div[class*="Calendar-plan-buttons__transfer"] button[class*="button__I8dwnFm136"]',
-                    'div[class*="Calendar-plan-buttons__content"] button[class*="button__I8dwnFm136"]',
-                    'button.button__I8dwnFm136.fullWidth__7XwuGaP7I+',
-                    'div[class*="Calendar-plan-buttons__wrapper"] button[class*="button__I8dwnFm136"]'
-                ]
+                # Ждем появления кнопки
+                confirm_button = self.wait.until(
+                    EC.element_to_be_clickable((By.CSS_SELECTOR, 'div[class*="Calendar-plan-buttons__transfer"] button[class*="button__I8dwnFm136"]'))
+                )
+                logger.info("✅ Found 'Запланировать' button")
                 
-                for selector in calendar_selectors:
-                    try:
-                        if selector.startswith('//'):
-                            elements = self.driver.find_elements(By.XPATH, selector)
-                        else:
-                            elements = self.driver.find_elements(By.CSS_SELECTOR, selector)
-                        
-                        for element in elements:
-                            if element.is_displayed():
-                                button_text = element.text.strip()
-                                button_class = element.get_attribute('class') or ''
-                                
-                                # Проверяем, что это именно кнопка "Запланировать" (не "Отменить")
-                                if (any(keyword in button_text.lower() for keyword in ["запланировать", "plan"]) and 
-                                    'button__ymbakhzRxO' not in button_class):  # Исключаем кнопку "Отменить"
-                                    confirm_button = element
-                                    logger.info(f"✅ Found 'Запланировать' button with calendar selector: {selector}")
-                                    logger.info(f"Button text: '{button_text}', Class: '{button_class[:100]}...'")
-                                    break
-                        
-                        if confirm_button:
-                            break
-                            
-                    except Exception as e:
-                        logger.debug(f"Calendar selector {selector} failed: {e}")
-                        continue
-            
-            # Если все еще не нашли, ждем появления с дополнительными попытками
-            if not confirm_button:
-                logger.info("⏳ Button not found with specific selectors, waiting for appearance...")
-                
-                # Даем дополнительное время для обновления DOM
-                await asyncio.sleep(0.3)
-                
-                try:
-                    # Пробуем найти кнопку с более широким поиском
-                    confirm_button = self.wait.until(
-                        EC.element_to_be_clickable((By.XPATH, '//span[contains(text(), "Запланировать")]/parent::button'))
-                    )
-                    logger.info("✅ 'Запланировать' button appeared after waiting")
-                except TimeoutException:
-                    # Пробуем альтернативные селекторы
-                    try:
-                        confirm_button = self.wait.until(
-                            EC.element_to_be_clickable((By.CSS_SELECTOR, 'div[class*="Calendar-plan-buttons__transfer"] button[class*="button__I8dwnFm136"]'))
-                        )
-                        logger.info("✅ Found 'Запланировать' button with CSS selector after waiting")
-                    except TimeoutException:
-                        # Последняя попытка - ищем любую кнопку с текстом "Запланировать"
-                        try:
-                            confirm_button = self.wait.until(
-                                EC.element_to_be_clickable((By.XPATH, '//button[contains(text(), "Запланировать")]'))
-                            )
-                            logger.info("✅ Found 'Запланировать' button after extended waiting")
-                        except TimeoutException:
-                            # Финальная попытка - ищем по классу кнопки
-                            try:
-                                confirm_button = self.wait.until(
-                                    EC.element_to_be_clickable((By.CSS_SELECTOR, 'button.button__I8dwnFm136.fullWidth__7XwuGaP7I+'))
-                                )
-                                logger.info("✅ Found 'Запланировать' button by class after extended waiting")
-                            except TimeoutException:
-                                raise BookingServiceError("Кнопка 'Запланировать' не найдена после всех попыток")
-            
-            # Ждем, пока кнопка станет активной (не в состоянии loading)
-            logger.info("⏳ Waiting for button to become active (not loading)...")
-            try:
-                # Ждем, пока кнопка станет кликабельной
-                self.wait.until(EC.element_to_be_clickable((By.XPATH, '//span[contains(text(), "Запланировать")]/parent::button')))
-                logger.info("✅ Button became clickable")
-            except TimeoutException:
-                logger.warning("⚠️ Button did not become clickable, trying anyway...")
-            
-            # Находим кнопку заново (чтобы избежать stale element reference)
-            logger.info("🔍 Re-finding button to avoid stale element reference...")
-            try:
-                # Ищем именно кнопку "Запланировать" с правильным классом
-                confirm_button = self.driver.find_element(By.CSS_SELECTOR, 'div[class*="Calendar-plan-buttons__transfer"] button[class*="button__I8dwnFm136"]')
-                logger.info("✅ Button re-found successfully with correct class")
-            except NoSuchElementException:
-                # Пробуем альтернативные селекторы
-                try:
-                    confirm_button = self.driver.find_element(By.XPATH, '//span[contains(text(), "Запланировать")]/parent::button[contains(@class, "button__I8dwnFm136")]')
-                    logger.info("✅ Button found with XPath selector")
-                except NoSuchElementException:
-                    # Последняя попытка - ищем по тексту и проверяем класс
-                    try:
-                        all_buttons = self.driver.find_elements(By.CSS_SELECTOR, 'div[class*="Calendar-plan-buttons"] button')
-                        for btn in all_buttons:
-                            btn_text = btn.text.strip()
-                            btn_class = btn.get_attribute('class') or ''
-                            if 'запланировать' in btn_text.lower() and 'button__I8dwnFm136' in btn_class:
-                                confirm_button = btn
-                                logger.info("✅ Button found by text and class verification")
-                                break
-                        else:
-                            raise NoSuchElementException("Button not found")
-                    except NoSuchElementException:
-                        raise BookingServiceError("Кнопка 'Запланировать' не найдена после повторного поиска")
-            
-            # Проверяем состояние кнопки
-            try:
-                button_enabled = confirm_button.is_enabled()
-                button_displayed = confirm_button.is_displayed()
-                button_text = confirm_button.text.strip()
-                button_class = confirm_button.get_attribute('class') or ''
-                logger.info(f"🔍 Button state: enabled={button_enabled}, displayed={button_displayed}, text='{button_text}', class='{button_class[:100]}...'")
-                
-                # Проверяем, не заблокирована ли кнопка
-                if not button_enabled:
+                # Проверяем, что кнопка активна
+                if not confirm_button.is_enabled():
                     logger.warning("⚠️ Button is disabled, waiting for it to become enabled...")
                     await asyncio.sleep(0.5)
-                    # Перепроверяем состояние
-                    button_enabled = confirm_button.is_enabled()
-                    logger.info(f"🔍 Button enabled after wait: {button_enabled}")
+                    if not confirm_button.is_enabled():
+                        raise BookingServiceError("Кнопка 'Запланировать' заблокирована")
                 
-            except Exception as e:
-                logger.warning(f"Error checking button state: {e}")
-            
-            # Дополнительная задержка перед кликом для стабильности
-            await asyncio.sleep(0.2)
-            
-            # Кликаем по кнопке с обработкой перекрытия элементов
-            try:
+                # Нажимаем кнопку
                 logger.info("🖱️ Clicking 'Запланировать' button...")
-                
-                # Сначала пробуем прокрутить к кнопке и убрать перекрывающие элементы
                 try:
-                    self.driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", confirm_button)
-                    await asyncio.sleep(0.2)
-                    
-                    # Пробуем убрать перекрывающие элементы
-                    self.driver.execute_script("""
-                        // Убираем перекрывающие элементы
-                        var overlays = document.querySelectorAll('[class*="Calendar-cell__cell-content"]');
-                        overlays.forEach(function(overlay) {
-                            if (overlay.style) {
-                                overlay.style.pointerEvents = 'none';
-                            }
-                        });
-                    """)
-                    await asyncio.sleep(0.1)
+                    confirm_button.click()
+                    logger.info("✅ Button clicked successfully")
                 except Exception as e:
-                    logger.debug(f"Error preparing button for click: {e}")
-                
-                # Пробуем обычный клик
-                confirm_button.click()
-                logger.info("✅ Button clicked successfully")
-                
-            except Exception as e:
-                logger.warning(f"Regular click failed: {e}, trying JavaScript click...")
-                try:
-                    # JavaScript клик с дополнительными проверками
-                    self.driver.execute_script("""
-                        // Убираем все перекрывающие элементы
-                        var overlays = document.querySelectorAll('[class*="Calendar-cell__cell-content"], [class*="modal-overlay"], [class*="backdrop"]');
-                        overlays.forEach(function(overlay) {
-                            if (overlay.style) {
-                                overlay.style.pointerEvents = 'none';
-                                overlay.style.zIndex = '-1';
-                            }
-                        });
-                        
-                        // Кликаем по кнопке
-                        arguments[0].click();
-                    """, confirm_button)
+                    logger.warning(f"Regular click failed: {e}, trying JavaScript click...")
+                    self.driver.execute_script("arguments[0].click();", confirm_button)
                     logger.info("✅ JavaScript click successful")
-                except Exception as e2:
-                    logger.error(f"JavaScript click also failed: {e2}")
-                    
-                    # Последняя попытка - клик по координатам
-                    try:
-                        logger.info("🔄 Trying click by coordinates...")
-                        location = confirm_button.location
-                        size = confirm_button.size
-                        x = location['x'] + size['width'] // 2
-                        y = location['y'] + size['height'] // 2
-                        
-                        from selenium.webdriver.common.action_chains import ActionChains
-                        actions = ActionChains(self.driver)
-                        actions.move_to_element(confirm_button).click().perform()
-                        logger.info("✅ Click by coordinates successful")
-                    except Exception as e3:
-                        logger.error(f"Click by coordinates also failed: {e3}")
-                        raise BookingServiceError(f"Не удалось кликнуть по кнопке 'Запланировать': {e3}")
-            
-            # Небольшая задержка после клика
-            await asyncio.sleep(1.0)
-            
-            # Проверяем, что что-то изменилось на странице после клика
-            try:
-                # Проверяем, есть ли изменения в DOM или URL
-                current_url = self.driver.current_url
-                logger.info(f"📍 Current URL after click: {current_url}")
                 
-                # Проверяем, появились ли новые элементы или изменились существующие
-                modals_after_click = self.driver.find_elements(By.CSS_SELECTOR, '[class*="modal"], [class*="Modal"], [class*="popup"], [class*="Popup"]')
-                visible_modals_after = [m for m in modals_after_click if m.is_displayed()]
-                logger.info(f"📋 Visible modals after click: {len(visible_modals_after)}")
-                
-                # Проверяем, изменился ли статус заказа
+                # Ждем закрытия модального окна
+                logger.info("⏳ Waiting for modal window to close...")
                 try:
-                    status_elements = self.driver.find_elements(By.CSS_SELECTOR, '[class*="badge"], [class*="Badge"]')
-                    for status_elem in status_elements:
-                        if status_elem.is_displayed():
-                            status_text = status_elem.text.strip()
-                            logger.info(f"📊 Status after click: '{status_text}'")
-                            if any(keyword in status_text.lower() for keyword in ['запланировано', 'запланирован', 'планируется']):
-                                logger.info("✅ Status changed to 'Запланировано' - booking successful!")
-                                return
-                except Exception as e:
-                    logger.debug(f"Error checking status: {e}")
+                    self.wait.until(EC.invisibility_of_element_located((By.CSS_SELECTOR, 'div[class*="Calendar-plan-buttons"]')))
+                    logger.info("✅ Modal window closed")
+                except TimeoutException:
+                    logger.warning("⚠️ Modal window did not close, checking status anyway...")
                 
-                # Проверяем, исчезла ли кнопка "Запланировать" (признак успешного бронирования)
-                try:
-                    plan_buttons = self.driver.find_elements(By.CSS_SELECTOR, 'div[class*="Calendar-plan-buttons"] button')
-                    plan_button_count = len([btn for btn in plan_buttons if btn.is_displayed() and 'запланировать' in btn.text.lower()])
-                    if plan_button_count == 0:
-                        logger.info("✅ 'Запланировать' button disappeared - booking likely successful!")
-                        return
-                except Exception as e:
-                    logger.debug(f"Error checking button disappearance: {e}")
+                # Проверяем успешность бронирования через переход на страницу поставок
+                logger.info("🔍 Checking booking success by navigating to supplies page...")
+                await self._check_booking_success()
                 
-                # Проверяем, исчезло ли модальное окно (признак успешного бронирования)
-                try:
-                    modals = self.driver.find_elements(By.CSS_SELECTOR, '[class*="modal"], [class*="Modal"], [class*="popup"], [class*="Popup"]')
-                    visible_modals = [m for m in modals if m.is_displayed()]
-                    if len(visible_modals) == 0:
-                        logger.info("✅ All modal windows closed - booking likely successful!")
-                        return
-                except Exception as e:
-                    logger.debug(f"Error checking modal visibility: {e}")
-                    
-            except Exception as e:
-                logger.debug(f"Error checking page changes: {e}")
-            
-            # Ждем завершения бронирования
-            try:
-                logger.info("⏳ Waiting for booking confirmation...")
-                
-                # Проверяем несколько признаков успешного бронирования
-                confirmation_indicators = [
-                    # Исчезновение модального окна календаря
-                    EC.invisibility_of_element_located((By.CSS_SELECTOR, 'div[class*="Calendar-plan-buttons"]')),
-                    # Исчезновение модального окна
-                    EC.invisibility_of_element_located((By.CSS_SELECTOR, '[class*="modal"], [class*="Modal"], [class*="popup"], [class*="Popup"]')),
-                    # Появление уведомления об успехе
-                    EC.presence_of_element_located((By.CSS_SELECTOR, '[class*="success"], [class*="Success"], [class*="notification"]')),
-                    # Изменение URL
-                    EC.url_contains('supplies-management'),
-                    # Изменение текста статуса на "Запланировано"
-                    EC.text_to_be_present_in_element((By.CSS_SELECTOR, '[class*="badge"], [class*="Badge"]'), 'Запланировано'),
-                    # Появление уведомления об ошибке
-                    EC.presence_of_element_located((By.CSS_SELECTOR, '[class*="error"], [class*="Error"], [class*="alert"]'))
-                ]
-                
-                # Ждем любого из признаков
-                self.wait.until(EC.any_of(*confirmation_indicators))
-                logger.info("✅ Booking confirmation completed")
-                
-                # Дополнительная проверка - убеждаемся, что модальное окно закрылось
-                try:
-                    modals = self.driver.find_elements(By.CSS_SELECTOR, '[class*="modal"], [class*="Modal"], [class*="popup"], [class*="Popup"]')
-                    visible_modals = [m for m in modals if m.is_displayed()]
-                    if not visible_modals:
-                        logger.info("✅ Modal window closed - booking successful")
-                    else:
-                        logger.warning(f"⚠️ {len(visible_modals)} modal windows still visible")
-                except Exception as e:
-                    logger.debug(f"Error checking modal visibility: {e}")
             except TimeoutException:
-                logger.warning("⚠️ Timeout waiting for booking confirmation")
-                
-                # Проверяем, есть ли еще модальное окно
-                try:
-                    modal_still_open = self.driver.find_elements(By.CSS_SELECTOR, '[class*="modal"], [class*="Modal"], [class*="popup"], [class*="Popup"]')
-                    if modal_still_open:
-                        logger.error("❌ Modal window still open - booking was not completed")
-                        raise BookingServiceError("Бронирование не завершено - модальное окно все еще открыто")
-                    
-                    # Проверяем текущее состояние страницы
-                    current_url = self.driver.current_url
-                    logger.info(f"📍 Current URL after timeout: {current_url}")
-                    
-                    # Если мы все еще на странице деталей заказа, бронирование не удалось
-                    if 'supply-detail' in current_url:
-                        logger.error("❌ Still on supply detail page - booking failed")
-                        raise BookingServiceError("Бронирование не удалось - остались на странице деталей заказа")
-                    
-                except BookingServiceError:
-                    raise
-                except Exception as e:
-                    logger.debug(f"Error checking booking status: {e}")
-                
-                # Проверяем, есть ли модальные окна или уведомления
-                try:
-                    modals = self.driver.find_elements(By.CSS_SELECTOR, '[class*="modal"], [class*="Modal"], [class*="popup"], [class*="Popup"]')
-                    for modal in modals:
-                        if modal.is_displayed():
-                            logger.info(f"📋 Found modal: {modal.text[:100]}...")
-                            # Логируем HTML модального окна для отладки
-                            logger.debug(f"Modal HTML: {modal.get_attribute('outerHTML')[:500]}...")
-                    
-                    alerts = self.driver.find_elements(By.CSS_SELECTOR, '[class*="alert"], [class*="Alert"], [class*="notification"]')
-                    for alert in alerts:
-                        if alert.is_displayed():
-                            logger.info(f"🔔 Found alert: {alert.text[:100]}...")
-                except Exception as e:
-                    logger.debug(f"Error checking modals/alerts: {e}")
-            
+                raise BookingServiceError("Кнопка 'Запланировать' не найдена или не стала активной")
+            except Exception as e:
+                logger.error(f"Error clicking 'Запланировать' button: {e}")
+                raise BookingServiceError(f"Ошибка при нажатии кнопки 'Запланировать': {e}")
+        
         except BookingServiceError:
             raise
         except Exception as e:
-            logger.error(f"Error confirming booking: {e}")
-            raise BookingServiceError(f"Ошибка подтверждения бронирования: {str(e)}")
+            logger.error(f"Unexpected error in _confirm_booking: {e}")
+            raise BookingServiceError(f"Неожиданная ошибка при подтверждении бронирования: {e}")
+    
+    async def _check_booking_success(self):
+        """Проверить успешность бронирования через переход на страницу поставок"""
+        try:
+            # Получаем номер заказа из URL
+            current_url = self.driver.current_url
+            order_number = None
+            
+            # Извлекаем номер заказа из URL
+            import re
+            match = re.search(r'preorderId=(\d+)', current_url)
+            if match:
+                order_number = match.group(1)
+                logger.info(f"📋 Found order number in URL: {order_number}")
+            else:
+                logger.warning("⚠️ Could not extract order number from URL")
+                # Попробуем найти номер заказа на странице
+                try:
+                    order_elements = self.driver.find_elements(By.CSS_SELECTOR, '[class*="order"], [class*="Order"], [class*="number"], [class*="Number"]')
+                    for elem in order_elements:
+                        text = elem.text.strip()
+                        if text.isdigit() and len(text) >= 6:  # Номера заказов обычно длинные
+                            order_number = text
+                            logger.info(f"📋 Found order number on page: {order_number}")
+                            break
+                except Exception as e:
+                    logger.debug(f"Error finding order number on page: {e}")
+            
+            if not order_number:
+                raise BookingServiceError("Не удалось определить номер заказа для проверки")
+            
+            # Переходим на страницу поставок
+            logger.info("🌐 Navigating to supplies page to check booking status...")
+            self.driver.get("https://seller.wildberries.ru/supplies-management/all-supplies")
+            await asyncio.sleep(2)
+            
+            # Ищем заказ по номеру и проверяем его статус
+            logger.info(f"🔍 Looking for order {order_number} in supplies list...")
+            
+            # Ищем строку с заказом
+            order_row = None
+            max_scroll_attempts = 5
+            
+            for scroll_attempt in range(max_scroll_attempts):
+                try:
+                    # Ищем все строки таблицы поставок
+                    rows = self.driver.find_elements(By.CSS_SELECTOR, 'tr[class*="Table-row"], div[class*="Table-row"], [class*="supply-row"]')
+                    
+                    for row in rows:
+                        try:
+                            row_text = row.text
+                            if order_number in row_text:
+                                order_row = row
+                                logger.info(f"✅ Found order {order_number} in row")
+                                break
+                        except:
+                            continue
+                    
+                    if order_row:
+                        break
+                    
+                    # Если не нашли, прокручиваем вниз
+                    if scroll_attempt < max_scroll_attempts - 1:
+                        logger.info(f"📜 Order not found, scrolling down (attempt {scroll_attempt + 1})...")
+                        self.driver.execute_script("window.scrollBy(0, 500);")
+                        await asyncio.sleep(1)
+                    
+                except Exception as e:
+                    logger.debug(f"Error searching for order row: {e}")
+                    continue
+            
+            if not order_row:
+                raise BookingServiceError(f"Заказ {order_number} не найден в списке поставок")
+            
+            # Проверяем статус заказа
+            try:
+                # Ищем элементы статуса в строке
+                status_elements = order_row.find_elements(By.CSS_SELECTOR, 
+                    '[class*="badge"], [class*="Badge"], [class*="status"], [class*="Status"], [class*="tag"], [class*="Tag"]')
+                
+                status_found = False
+                for status_elem in status_elements:
+                    if status_elem.is_displayed():
+                        status_text = status_elem.text.strip()
+                        logger.info(f"📊 Found status: '{status_text}'")
+                        
+                        if any(keyword in status_text.lower() for keyword in ['запланировано', 'запланирован', 'планируется']):
+                            logger.info("✅ Booking successful! Status changed to 'Запланировано'")
+                            return
+                        status_found = True
+                
+                if not status_found:
+                    # Если не нашли элементы статуса, ищем текст в самой строке
+                    row_text = order_row.text
+                    logger.info(f"📋 Row text: {row_text[:200]}...")
+                    
+                    if any(keyword in row_text.lower() for keyword in ['запланировано', 'запланирован', 'планируется']):
+                        logger.info("✅ Booking successful! Found 'Запланировано' in row text")
+                        return
+                
+                # Если статус не изменился, бронирование не удалось
+                logger.error(f"❌ Booking failed - status did not change to 'Запланировано'")
+                raise BookingServiceError(f"Бронирование не удалось - статус заказа {order_number} не изменился на 'Запланировано'")
+                
+            except Exception as e:
+                logger.error(f"Error checking order status: {e}")
+                raise BookingServiceError(f"Ошибка при проверке статуса заказа: {e}")
+                
+        except BookingServiceError:
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected error in _check_booking_success: {e}")
+            raise BookingServiceError(f"Неожиданная ошибка при проверке успешности бронирования: {e}")
     
     async def __aenter__(self):
         """Async context manager entry"""

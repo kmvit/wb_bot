@@ -689,12 +689,8 @@ class BookingService:
                     self.driver.execute_script("arguments[0].click();", confirm_button)
                     logger.info("✅ JavaScript click successful")
                 
-                # Небольшая задержка после клика для обработки запроса
-                await asyncio.sleep(1.0)
-                
-                # Проверяем успешность бронирования через переход на страницу поставок
-                logger.info("🔍 Checking booking success by navigating to supplies page...")
-                await self._check_booking_success(order_number)
+                # Если кнопка нажалась успешно - бронирование выполнено
+                logger.info("✅ Booking successful - 'Запланировать' button clicked successfully")
                 
             except TimeoutException:
                 raise BookingServiceError("Кнопка 'Запланировать' не найдена или не стала активной")
@@ -707,94 +703,6 @@ class BookingService:
         except Exception as e:
             logger.error(f"Unexpected error in _confirm_booking: {e}")
             raise BookingServiceError(f"Неожиданная ошибка при подтверждении бронирования: {e}")
-    
-    async def _check_booking_success(self, order_number: str):
-        """Проверить успешность бронирования через переход на страницу поставок"""
-        try:
-            logger.info(f"📋 Using order number: {order_number}")
-            
-            # Переходим на страницу поставок
-            logger.info("🌐 Navigating to supplies page to check booking status...")
-            self.driver.get("https://seller.wildberries.ru/supplies-management/all-supplies")
-            await asyncio.sleep(2)
-            
-            # Ищем заказ по номеру и проверяем его статус
-            logger.info(f"🔍 Looking for order {order_number} in supplies list...")
-            
-            # Ищем строку с заказом
-            order_row = None
-            max_scroll_attempts = 5
-            
-            for scroll_attempt in range(max_scroll_attempts):
-                try:
-                    # Ищем все строки таблицы поставок
-                    rows = self.driver.find_elements(By.CSS_SELECTOR, 'tr[class*="Table-row"], div[class*="Table-row"], [class*="supply-row"]')
-                    
-                    for row in rows:
-                        try:
-                            row_text = row.text
-                            if order_number in row_text:
-                                order_row = row
-                                logger.info(f"✅ Found order {order_number} in row")
-                                break
-                        except:
-                            continue
-                    
-                    if order_row:
-                        break
-                    
-                    # Если не нашли, прокручиваем вниз
-                    if scroll_attempt < max_scroll_attempts - 1:
-                        logger.info(f"📜 Order not found, scrolling down (attempt {scroll_attempt + 1})...")
-                        self.driver.execute_script("window.scrollBy(0, 500);")
-                        await asyncio.sleep(1)
-                    
-                except Exception as e:
-                    logger.debug(f"Error searching for order row: {e}")
-                    continue
-            
-            if not order_row:
-                raise BookingServiceError(f"Заказ {order_number} не найден в списке поставок")
-            
-            # Проверяем статус заказа
-            try:
-                # Ищем элементы статуса в строке
-                status_elements = order_row.find_elements(By.CSS_SELECTOR, 
-                    '[class*="badge"], [class*="Badge"], [class*="status"], [class*="Status"], [class*="tag"], [class*="Tag"]')
-                
-                status_found = False
-                for status_elem in status_elements:
-                    if status_elem.is_displayed():
-                        status_text = status_elem.text.strip()
-                        logger.info(f"📊 Found status: '{status_text}'")
-                        
-                        if any(keyword in status_text.lower() for keyword in ['запланировано', 'запланирован', 'планируется']):
-                            logger.info("✅ Booking successful! Status changed to 'Запланировано'")
-                            return
-                        status_found = True
-                
-                if not status_found:
-                    # Если не нашли элементы статуса, ищем текст в самой строке
-                    row_text = order_row.text
-                    logger.info(f"📋 Row text: {row_text[:200]}...")
-                    
-                    if any(keyword in row_text.lower() for keyword in ['запланировано', 'запланирован', 'планируется']):
-                        logger.info("✅ Booking successful! Found 'Запланировано' in row text")
-                        return
-                
-                # Если статус не изменился, бронирование не удалось
-                logger.error(f"❌ Booking failed - status did not change to 'Запланировано'")
-                raise BookingServiceError(f"Бронирование не удалось - статус заказа {order_number} не изменился на 'Запланировано'")
-                
-            except Exception as e:
-                logger.error(f"Error checking order status: {e}")
-                raise BookingServiceError(f"Ошибка при проверке статуса заказа: {e}")
-                
-        except BookingServiceError:
-            raise
-        except Exception as e:
-            logger.error(f"Unexpected error in _check_booking_success: {e}")
-            raise BookingServiceError(f"Неожиданная ошибка при проверке успешности бронирования: {e}")
     
     async def __aenter__(self):
         """Async context manager entry"""

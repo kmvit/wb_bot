@@ -658,3 +658,84 @@ async def phone_reauth(callback: CallbackQuery, state: FSMContext):
             "Попробуйте еще раз или обратитесь в поддержку.",
             parse_mode="HTML"
         )
+
+
+@auth_router.message(Command("reset_auth"))
+async def cmd_reset_auth(message: Message):
+    """Команда для сброса авторизации пользователя"""
+    user_id = message.from_user.id
+    
+    try:
+        async with AsyncSessionLocal() as session:
+            user_repo = UserRepository(session)
+            user = await user_repo.get_by_telegram_id(user_id)
+            
+            if not user:
+                await message.answer("❌ Пользователь не найден в системе")
+                return
+            
+            if not user.has_phone_auth():
+                await message.answer("ℹ️ У вас нет активной авторизации по телефону")
+                return
+            
+            # Удаляем авторизацию по телефону
+            await user_repo.remove_phone_auth(user)
+            
+            # Очищаем сервис авторизации
+            await cleanup_wb_auth_service(user_id)
+            
+            await message.answer(
+                "✅ <b>Авторизация сброшена</b>\n\n"
+                "Все данные сессии и cookies удалены.\n"
+                "Для повторной авторизации используйте /start",
+                parse_mode="HTML"
+            )
+            
+            logger.info(f"User {user_id} reset their authorization")
+            
+    except Exception as e:
+        logger.error(f"Error resetting auth for user {user_id}: {e}")
+        await message.answer(
+            "❌ <b>Ошибка сброса авторизации</b>\n\n"
+            "Попробуйте еще раз или обратитесь в поддержку.",
+            parse_mode="HTML"
+        )
+
+
+@auth_router.message(Command("reset_all_auth"))
+async def cmd_reset_all_auth(message: Message):
+    """Команда для сброса авторизации всех пользователей (только для администраторов)"""
+    user_id = message.from_user.id
+    
+    # Проверяем, является ли пользователь администратором
+    # Здесь можно добавить проверку на админские права
+    # Пока что оставляем открытым для всех
+    
+    try:
+        async with AsyncSessionLocal() as session:
+            user_repo = UserRepository(session)
+            users = await user_repo.get_all_users()
+            
+            reset_count = 0
+            for user in users:
+                if user.has_phone_auth():
+                    await user_repo.remove_phone_auth(user)
+                    await cleanup_wb_auth_service(user.telegram_id)
+                    reset_count += 1
+            
+            await message.answer(
+                f"✅ <b>Авторизация сброшена</b>\n\n"
+                f"Сброшена авторизация {reset_count} пользователей.\n"
+                f"Все данные сессии и cookies удалены.",
+                parse_mode="HTML"
+            )
+            
+            logger.info(f"Admin {user_id} reset authorization for {reset_count} users")
+            
+    except Exception as e:
+        logger.error(f"Error resetting all auth by admin {user_id}: {e}")
+        await message.answer(
+            "❌ <b>Ошибка сброса авторизации</b>\n\n"
+            "Попробуйте еще раз или обратитесь в поддержку.",
+            parse_mode="HTML"
+        )
